@@ -42,23 +42,29 @@ rule Signer_Sign:
      in
      [ !Signer(~s, $kid, $sid, key), Fr(~data) ]
      --[ Sign(~s, $kid, $sid, $vid, key, ~data) ]->
-     [ ConfidentialAndAuthenticatedMessage($sid, $vid, token), Out(~data) ]
+     [ Out(<token, ~data>) ]
 
 rule Verifier_Verify:
      let mackey = h(key, $sid)
-	 token = mac(data, mackey)
+     token = mac(data, mackey)
      in
-     [ In(data), !Verifier(~s, $kid, $sid, $vid, key), ConfidentialAndAuthenticatedMessage($sid, $vid, token) ]
-     --[ Verified(data) ]->
+     [ In(<token, data>), !Verifier(~v, $kid, $sid, $vid, key) ]
+     --[ Verified(data, key) ]->
      [ ]
 
-// rule Compromise_Verifier_Key:
-//      [ !Verifier(v, $kid, $sid, $vid, key) ]
+rule Compromise_Verifier_Key:
+     [ !Verifier(~v, $kid, $sid, $vid, key) ]
+     --[ Compromise(key) ]->
+     [ Out(key) ]
 
 lemma sane:
-      exists-trace "Ex data #j. Verified(data) @ j"
+      exists-trace "Ex data key #j. Verified(data, key) @ j"
 
 lemma authenticated:
-      "All data #j. Verified(data) @ j ==> Ex a b c d e #i. Sign(a, b, c, d, e, data) @ i"
+      "All data key #j. Verified(data, key) @ j ==> (
+           (Ex a b c d e #i. Sign(a, b, c, d, e, data) @ i)
+	 | (Ex #i. Compromise(key) @ i)
+       )
+"
 
 end
