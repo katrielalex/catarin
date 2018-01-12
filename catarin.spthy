@@ -2,7 +2,7 @@ theory catarin
 begin
 
 
-functions: h/1, mac/2
+functions: h/2, mac/2
 
 rule Setup_KDC:
      [ Fr(~k) ]
@@ -13,7 +13,7 @@ rule KDC_Provision_Signer:
      let m = <'provision_signer', h(h(~k, $sid), $vid)>
      in
      [ !KDC(~k, $kid) ]
-     --[ ProvisionKeyFor(~k, 'signer', <$kid, $sid, $vid>) ]->
+     --[ ProvisionKeyFor(~k, 'signer', <$kid, $sid, $vid>), Neq($sid, $vid) ]->
      [ ConfidentialAndAuthenticatedMessage($kid, $sid, m) ]
 
 rule KDC_Provision_Verifier:
@@ -49,22 +49,30 @@ rule Verifier_Verify:
      token = mac(data, mackey)
      in
      [ In(<token, data>), !Verifier(~v, $kid, $sid, $vid, key) ]
-     --[ Verified(data, key) ]->
+     --[ Verified(data, $vid, key) ]->
      [ ]
 
 rule Compromise_Verifier_Key:
      [ !Verifier(~v, $kid, $sid, $vid, key) ]
-     --[ Compromise(key) ]->
+     --[ VCompromise(key) ]->
+     [ Out(key) ]
+
+rule Compromise_Signer_Key:
+     [ !Signer(~s, $kid, $sid, key) ]
+     --[ SCompromise(key) ]->
      [ Out(key) ]
 
 lemma sane:
-      exists-trace "Ex data key #j. Verified(data, key) @ j"
+      exists-trace "Ex data vid key #j. Verified(data, vid, key) @ j"
 
 lemma authenticated:
-      "All data key #j. Verified(data, key) @ j ==> (
-           (Ex a b c d e #i. Sign(a, b, c, d, e, data) @ i)
-	 | (Ex #i. Compromise(key) @ i)
+      "All data vid key #j. Verified(data, vid, key) @ j ==> (
+           (Ex a b c d #i. Sign(a, b, c, d, vid, data) @ i)
+	 | (Ex #i. VCompromise(key) @ i) // the verifier's key was compromised (i.e. KCI)
+	 | (Ex skey #i. key=h(skey, vid) & SCompromise(skey) @ i) // the signer's key was compromised
        )
 "
+
+restriction neq_impl: "All x y #i. Neq(x, y) @ i ==> not(x=y)"
 
 end
