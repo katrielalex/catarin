@@ -1,0 +1,59 @@
+theory catarin
+begin
+
+
+functions: h/1, mac/2
+
+rule Setup_KDC:
+     [ Fr(~k) ]
+     --[ KDC_key(~k) ]->
+     [ !KDC(~k, $kid) ]
+
+rule KDC_Provision_Signer:
+     let m = <'provision_signer', h(~k, $sid)>
+     in
+     [ !KDC(~k, $kid) ]
+     --[ ProvisionKeyFor(~k, 'signer', <$kid, $sid>) ]->
+     [ ConfidentialAndAuthenticatedMessage($kid, $sid, m) ]
+
+rule KDC_Provision_Verifier:
+     let m = <'provision_verifier', h(h(~k, $sid), $vid)>
+     in
+     [ !KDC(~k, $kid) ]
+     --[ ProvisionKeyFor(~k, 'verifier', <$kid, $sid, $vid>) ]->
+     [ ConfidentialAndAuthenticatedMessage($kid, $vid, m) ]
+
+rule Setup_Signer:
+     let m = <'provision_signer', key>
+     in
+     [ ConfidentialAndAuthenticatedMessage($kid, $sid, m), Fr(~s) ]
+     --[ SetupSigner(~s, $kid, $sid, key) ]->
+     [ !Signer(~s, $kid, $sid, key) ]
+
+rule Setup_Verifier:
+     let m = <'provision_verifier', key>
+     in
+     [ ConfidentialAndAuthenticatedMessage($kid, $sid, m), Fr(~v) ]
+     --[ SetupVerifier(~v, $kid, $sid, $vid, key) ]->
+     [ !Verifier(~v, $kid, $sid, $vid, key) ]
+
+rule Signer_Sign:
+     let mackey = h(key, $vid)
+         token = mac(~data, mackey)
+     in
+     [ !Signer(~s, $kid, $sid, key), Fr(~data) ]
+     --[ Sign(~s, $kid, $sid, $vid, key) ]->
+     [ ConfidentialAndAuthenticatedMessage($sid, $vid, token), Out(~data) ]
+
+rule Verifier_Verify:
+     let token = mac(data, key)
+     in
+     [ In(data), !Verifier(~s, $kid, $sid, $vid, key), ConfidentialAndAuthenticatedMessage($sid, $vid, token) ]
+     --[ Verified(data) ]->
+     [ ]
+
+lemma sane:
+      exists-trace "Ex data #j. Verified(data) @ j"
+
+
+end
