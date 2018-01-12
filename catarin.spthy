@@ -6,67 +6,65 @@ functions: h/2, mac/2
 
 rule Setup_KDC:
      [ Fr(~k) ]
-     --[ KDC_key(~k) ]->
+     --[ KDC_key(~k), Claim($kid) ]->
      [ !KDC(~k, $kid) ]
 
 rule KDC_Provision_Verifier:
      let m = <'provision_verifier', h(~k, $vid)>
      in
      [ !KDC(~k, $kid) ]
-     --[ ProvisionKeyFor(~k, 'verifier', <$kid, $vid>) ]->
+     --[ ProvisionKeyFor(~k, 'verifier', <$kid, $vid>), Claim($vid) ]->
      [ ConfidentialAndAuthenticatedMessage($kid, $vid, m) ]
 
 rule KDC_Provision_Signer:
-     let m = <'provision_signer', h(h(~k, $sid), $vid)>
+     let m = <'provision_signer', h(h(~k, $sid), $vid), $vid> // send $vid so the signer knows whom it is sending to
      in
-     [ !KDC(~k, $kid), !Verifier(~v, $kid, $vid, key) ] // include verifier here to get $vid
-     --[ ProvisionKeyFor(~k, 'signer', <$kid, $sid, $vid>), Neq($sid, $vid) ]->
+     [ !KDC(~k, $kid), !Verifier(~v, $kid, $vid, key) ] // include verifier here to get $vid != $sid
+     --[ ProvisionKeyFor(~k, 'signer', <$kid, $sid, $vid>), Neq($sid, $vid), Claim($sid) ]->
      [ ConfidentialAndAuthenticatedMessage($kid, $sid, m) ]
 
 rule Setup_Signer:
-     let m = <'provision_signer', key>
+     let m = <'provision_signer', key, vid>
      in
-     [ ConfidentialAndAuthenticatedMessage($kid, $sid, m), Fr(~s) ]
-     --[ SetupSigner(~s, $kid, $sid, key) ]->
-     [ !Signer(~s, $kid, $sid, key) ]
+     [ ConfidentialAndAuthenticatedMessage(kid, sid, m), Fr(~s) ]
+     --[ SetupSigner(~s, kid, sid, vid, key) ]->
+     [ !Signer(~s, kid, sid, vid, key) ]
 
 rule Setup_Verifier:
      let m = <'provision_verifier', key>
      in
-     [ ConfidentialAndAuthenticatedMessage($kid, $sid, m), Fr(~v) ]
-     --[ SetupVerifier(~v, $kid, $sid, $vid, key) ]->
-     [ !Verifier(~v, $kid, $vid, key) ]
+     [ ConfidentialAndAuthenticatedMessage(kid, vid, m), Fr(~v) ]
+     --[ SetupVerifier(~v, kid, vid, key) ]->
+     [ !Verifier(~v, kid, vid, key) ]
 
 rule Signer_Sign:
      let token = mac(~data, key)
      in
-     [ !Signer(~s, $kid, $sid, key), Fr(~data) ]
-     --[ Sign(~s, $kid, $sid, $vid, key, ~data) ]->
+     [ !Signer(~s, kid, sid, vid, key), Fr(~data) ]
+     --[ Sign(~s, kid, sid, vid, key, ~data) ]->
      [ Out(<token, ~data>) ]
 
 rule Verifier_Verify:
-     let key = h(master, sid)
+     let key = h(master, vid)
          mackey = h(key, sid)
          token = mac(data, mackey)
      in
-     [ In(<token, data>), !Verifier(~v, $kid, $vid, key) ]
-     --[ Verified(data, $vid, key) ]->
+     [ In(<token, data>), !Verifier(~v, kid, vid, key) ]
+     --[ Verified(data, vid, key) ]->
      [ ]
 
 rule Compromise_Verifier_Key:
-     [ !Verifier(~v, $kid, $vid, key) ]
-     --[ VCompromise(key) ]->
+     [ !Verifier(~v, kid, vid, key) ]
+     --[ VCompromise(key), Evil() ]->
      [ Out(key) ]
 
 rule Compromise_Signer_Key:
-     [ !Signer(~s, $kid, $sid, key) ]
-     --[ SCompromise(key) ]->
+     [ !Signer(~s, kid, sid, vid, key) ]
+     --[ SCompromise(key), Evil() ]->
      [ Out(key) ]
 
-
-
 lemma sane:
-      exists-trace "Ex data vid key #j. Verified(data, vid, key) @ j"
+      exists-trace "Ex data vid key #j. Verified(data, vid, key) @ j & not(Ex #i. Evil() @ i)"
 
 lemma authenticated:
       "All data vid key #j. Verified(data, vid, key) @ j ==> (
@@ -77,5 +75,6 @@ lemma authenticated:
 "
 
 restriction neq_impl: "All x y #i. Neq(x, y) @ i ==> not(x=y)"
+restriction no_id_reuse: "All x #i #j. (Claim(x) @ i & Claim(x) @ j) ==> #i = #j"
 
 end
