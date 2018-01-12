@@ -9,19 +9,19 @@ rule Setup_KDC:
      --[ KDC_key(~k) ]->
      [ !KDC(~k, $kid) ]
 
-rule KDC_Provision_Signer:
-     let m = <'provision_signer', h(h(~k, $sid), $vid)>
-     in
-     [ !KDC(~k, $kid) ]
-     --[ ProvisionKeyFor(~k, 'signer', <$kid, $sid, $vid>), Neq($sid, $vid) ]->
-     [ ConfidentialAndAuthenticatedMessage($kid, $sid, m) ]
-
 rule KDC_Provision_Verifier:
      let m = <'provision_verifier', h(~k, $vid)>
      in
      [ !KDC(~k, $kid) ]
      --[ ProvisionKeyFor(~k, 'verifier', <$kid, $vid>) ]->
      [ ConfidentialAndAuthenticatedMessage($kid, $vid, m) ]
+
+rule KDC_Provision_Signer:
+     let m = <'provision_signer', h(h(~k, $sid), $vid)>
+     in
+     [ !KDC(~k, $kid), !Verifier(~v, $kid, $vid, key) ] // include verifier here to get $vid
+     --[ ProvisionKeyFor(~k, 'signer', <$kid, $sid, $vid>), Neq($sid, $vid) ]->
+     [ ConfidentialAndAuthenticatedMessage($kid, $sid, m) ]
 
 rule Setup_Signer:
      let m = <'provision_signer', key>
@@ -35,7 +35,7 @@ rule Setup_Verifier:
      in
      [ ConfidentialAndAuthenticatedMessage($kid, $sid, m), Fr(~v) ]
      --[ SetupVerifier(~v, $kid, $sid, $vid, key) ]->
-     [ !Verifier(~v, $kid, $sid, $vid, key) ]
+     [ !Verifier(~v, $kid, $vid, key) ]
 
 rule Signer_Sign:
      let token = mac(~data, key)
@@ -45,15 +45,16 @@ rule Signer_Sign:
      [ Out(<token, ~data>) ]
 
 rule Verifier_Verify:
-     let mackey = h(key, $sid)
-     token = mac(data, mackey)
+     let key = h(master, sid)
+         mackey = h(key, sid)
+         token = mac(data, mackey)
      in
-     [ In(<token, data>), !Verifier(~v, $kid, $sid, $vid, key) ]
+     [ In(<token, data>), !Verifier(~v, $kid, $vid, key) ]
      --[ Verified(data, $vid, key) ]->
      [ ]
 
 rule Compromise_Verifier_Key:
-     [ !Verifier(~v, $kid, $sid, $vid, key) ]
+     [ !Verifier(~v, $kid, $vid, key) ]
      --[ VCompromise(key) ]->
      [ Out(key) ]
 
@@ -62,6 +63,8 @@ rule Compromise_Signer_Key:
      --[ SCompromise(key) ]->
      [ Out(key) ]
 
+
+
 lemma sane:
       exists-trace "Ex data vid key #j. Verified(data, vid, key) @ j"
 
@@ -69,7 +72,7 @@ lemma authenticated:
       "All data vid key #j. Verified(data, vid, key) @ j ==> (
            (Ex a b c d #i. Sign(a, b, c, d, vid, data) @ i)
 	 | (Ex #i. VCompromise(key) @ i) // the verifier's key was compromised (i.e. KCI)
-	 | (Ex skey #i. key=h(skey, vid) & SCompromise(skey) @ i) // the signer's key was compromised
+//	 | (Ex skey #i. key=h(skey, vid) & SCompromise(skey) @ i) // the signer's key was compromised
        )
 "
 
